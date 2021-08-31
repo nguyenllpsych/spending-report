@@ -1,0 +1,20 @@
+Date,Description,Category,Cost,Currency,John Smith,Jessica Jones
+8/1/2021,food stuff,Groceries,12,USD,6,-6
+8/1/2021,bagel,Dining out,22.5,USD,11.25,-11.25
+8/1/2021,chuck n dons,Pets,41.1,USD,20.55,-20.55
+8/1/2021,burrito,Dining out,28.53,USD,-14.27,14.27
+8/2/2021,el burrito,Dining out,42.38,USD,21.19,-21.19
+8/2/2021,home supplies,Electronics,29.12,USD,14.56,-14.56
+8/3/2021,pizza,Dining out,69.43,USD,34.71,-34.71
+8/3/2021,pet harness,Pets,23.96,USD,11.98,-11.98
+8/4/2021,Gas ,Gas/fuel,30.05,USD,-15.03,15.03
+8/4/2021,pet food,Pets,40.92,USD,20.46,-20.46
+8/6/2021,chewy toys,Pets,67.61,USD,33.81,-33.81
+8/7/2021,farmers market,Groceries,25,USD,12.5,-12.5
+8/7/2021,bagels,Dining out,22.55,USD,11.27,-11.27
+8/7/2021,costco,Household supplies,201.07,USD,-100.53,100.53
+8/15/2021,sushi,Dining out,63.11,USD,-31.56,31.56
+8/28/2021,costco groceries,Groceries,202.82,USD,-101.41,101.41
+8/29/2021,amazon prime,Home - Other,63.65,USD,31.82,-31.82
+,,,,,,
+8/31/2021,Total balance, , ,USD,-17.35,17.35
