@@ -1,4 +1,4 @@
-## SplitwiseR Shiny App
+## splitwiseR Shiny App
 
 
 This project creates a Shiny app to visualize shared household spending data exported from the Splitwise app.
