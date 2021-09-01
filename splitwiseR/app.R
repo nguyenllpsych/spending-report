@@ -9,6 +9,10 @@ library(shinyWidgets)   # toggle materialSwitch
 library(colourpicker)   # user selected color
 library(tidyverse)      # general wrangling
 
+# current dates
+this_date  <- unlist(str_split(Sys.Date(), pattern = "-"))
+this_year  <- this_date[1]
+this_month <- this_date[2]
 
 # -------------- Define UI -------------- #
 
@@ -23,23 +27,42 @@ ui <- fluidPage(
                   accept = c(".csv")
         ),
         
-        fluidRow(
-            column(6,
-                   dateInput("start", "Start Date:", value = "2021-08-01")),
-            column(6,
-                   dateInput("end", "End Date:", value = "2021-08-31"))
+        selectInput("date", 
+                    strong("Date range"),
+                    choices = c("Month to date", "Custom date"),
+                    selected = "Month to date"),
+        tabsetPanel(
+            id   = "date_selector",
+            type = "hidden",
+            tabPanelBody(
+                "Month to date",
+                strong(paste0("Month to Date: From ", this_year, "-", this_month, "-01 ",
+                       "to ", Sys.Date(), "\n"))), 
+            tabPanelBody(
+                "Custom date",
+                fluidRow(
+                    column(6,
+                           dateInput("start", "Start Date:", value = "2021-08-01")),
+                    column(6,
+                           dateInput("end", "End Date:", value = "2021-08-31"))))
         ),
         
+        hr(),
+        
+        pickerInput("cat", 
+                    "Which category to plot?",
+                    multiple = TRUE,
+                    options  = list(`actions-box` = TRUE),
+                    choices  = c("Groceries", "Household supplies", "Home"),
+                    selected = c("Groceries", "Household supplies", "Home")
+        ),
+
         fluidRow(
             column(6,
-                   colourInput("highcolor", "above high", 
-                               value = "yellow"),
-                   colourInput("avgminuscolor", "above low", 
+                   colourInput("budget_green", "Below budget", 
                                value = "green")),
             column(6,
-                   colourInput("avgpluscolor", "above average", 
-                               value = "red"),
-                   colourInput("lowcolor", "below low", 
+                   colourInput("budget_red", "Above budget", 
                                value = "brown"))
         )
     ),
@@ -60,42 +83,96 @@ ui <- fluidPage(
 
 # -------------- Server Logic -------------- #
 
-server <- function(input, output) {
+server <- function(input, output, session) {
     
-    # data file
-    data <- reactive({
+    # observe custom_date option
+    observeEvent(input$date, {
+        updateTabsetPanel(session,
+                          "date_selector",
+                          selected = input$date)
+    })
+
+    # extract date range
+    dates <- reactive({
+        if(input$date == "Custom date") {
+            
+            # custom date range
+            start <- input$start
+            end   <- input$end
+            
+        } else {
+            # month to date
+            start <- as.Date(paste0(this_year, "-", this_month, "-01"))
+            end   <- Sys.Date()
+        }
+        return(list(end   = end,
+                    start = start))
+    })
+
+    # extract information from data files
+    data_list <- reactive({
         
-        # initial clean uploaded data file
-        data <- read.csv(input$upload$datapath) %>% 
+        # default test_data.csv if no uploaded files
+        if(!is.null(input$upload)) {
+            data <- read.csv(input$upload$datapath)
+        } else {
+            data <- read.csv(file = "test_data.csv")
+        }
+        
+        # initial clean of data file
+        data  <- data %>% 
             
             # format variables 
-            mutate(Date = as.Date(Date),
+            mutate(Date = as.Date(Date, tryFormats = c("%m/%d/%Y", "%Y-%m-%d")),
                    Category = as.factor(Category)) %>% 
-            
+
             # delete "total balance" row and "currency" column
             filter(Description != "Total balance") %>% 
             select(-Currency) %>% 
-            
-            # selected date from uploaded data file
-            filter(Date >= input$start & Date <= input$end) %>% 
-            
-            # 0/1 dummy code for each person
-            # 1 = spender
-            mutate(Linh.Nguyen = as.numeric(Linh.Nguyen > 0),
-                   Justin.Cho  = as.numeric(Justin.Cho > 0))
-            
-                # TODO: add budgets for benchmarks
 
-        data
+            # selected date from uploaded data file
+            filter(Date >= dates()$start & Date <= dates()$end)
+        
+        # pull out people's names
+        names <- colnames(data)[5:ncol(data)]
+        
+        # 0/1 dummy code for each person
+        # 1 = spender
+        data  <- data %>% 
+            mutate(across(all_of(names),
+                          ~as.numeric(. > 0)))
+        
+        # pull out categories
+        cat   <- sort(as.character(unique(data$Category)))
+        
+        return(list(data  = data,
+                    names = names,
+                    cat   = cat))
     })
     
+    # pull out reactive variables
+    data  <- reactive(data_list()$data)
+    names <- reactive(data_list()$names)
+    cat   <- reactive(data_list()$cat)
+    
+    # observe category options
+    observeEvent(cat(), {
+        updatePickerInput(session,
+                          "cat",
+                          choices = cat(),
+                          selected = cat())
+    })
+
+    # TODO: add budgets for benchmarks
+            
     # bar chart data
     data_bar <- reactive({
         aggregate(data()$Cost, by = list(data()$Category), 
                   FUN = function(x) sum(x, na.rm = T)) %>% 
             as.data.frame() %>% 
             rename(Category = Group.1,
-                   Cost     = x)
+                   Cost     = x) %>% 
+            filter(Category %in% input$cat)
     })
     
     # bar chart
@@ -104,26 +181,29 @@ server <- function(input, output) {
                         aes(x = reorder(Category, Cost), 
                             y = Cost)) +
             geom_col() +
-            geom_text(aes(label = Cost), vjust = -0.2) +
             theme_classic() +
             theme(plot.title   = element_text(size = 18, face = "bold"),
                   axis.title.x = element_text(size = 16, face = "bold"),
                   axis.title.y = element_text(size = 16, face = "bold"),
                   axis.text.x  = element_text(size = 14),
                   axis.text.y  = element_text(size = 14)) +
-            labs(title = paste0("Expense reports for the selected date range, total = $",
+            labs(title = paste0("Expense reports from ", dates()$start, " to ", dates()$end, ", total = $",
                                 sum(data_bar()$Cost)),
-                 x     = "Category")
+                 x     = "Category") +
+            coord_flip() +
+            geom_text(aes(label = Cost), hjust = -0.2)
+
         
         p_bar
     })
     
     # outputs
-    output$plot <- renderPlot(p_bar())
+    output$plot    <- renderPlot(p_bar())
     output$summary <- renderDataTable(data_bar())
-    output$data <- renderDataTable(data())
+    output$data    <- renderDataTable(data())
 
 }
 
 # Run the application 
 shinyApp(ui = ui, server = server)
+
