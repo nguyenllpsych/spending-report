@@ -2,6 +2,7 @@
 
 # libraries
 library(readxl)         # import export
+library(reshape2)       # long wide
 library(kableExtra)     # table formatting
 library(data.table)     # setnames
 library(shiny)          # shiny
@@ -23,10 +24,13 @@ ui <- fluidPage(
 
     # Sidebar with application options
     sidebarPanel(
+        
+        # data files
         fileInput("upload", "Upload Exported csv from Splitwise",
                   accept = c(".csv")
         ),
         
+        # date selection
         selectInput("date", 
                     strong("Date range"),
                     choices = c("Month to date", "Custom date"),
@@ -49,6 +53,7 @@ ui <- fluidPage(
         
         hr(),
         
+        # category selection
         pickerInput("cat", 
                     "Which category to plot?",
                     multiple = TRUE,
@@ -56,14 +61,32 @@ ui <- fluidPage(
                     choices  = c("Groceries", "Household supplies", "Home"),
                     selected = c("Groceries", "Household supplies", "Home")
         ),
-
+        
+        # budget setting
+        selectInput("budget",
+                    strong("Set a budget?"),
+                    choices = c("No", "Custom budget"),
+                    selected = "No"),
+        tabsetPanel(
+            id = "budget_selector",
+            type = "hidden",
+            tabPanelBody(
+                "No"
+            ),
+            tabPanelBody(
+                "Custom budget",
+                uiOutput("custom_budget")
+            )
+        ),
+        
+        # color selection
         fluidRow(
             column(6,
                    colourInput("budget_green", "Below budget", 
-                               value = "green")),
+                               value = "#057a05")),
             column(6,
                    colourInput("budget_red", "Above budget", 
-                               value = "brown"))
+                               value = "#a52a2a"))
         )
     ),
     mainPanel(
@@ -163,25 +186,103 @@ server <- function(input, output, session) {
                           selected = cat())
     })
 
-    # TODO: add budgets for benchmarks
+    # render budget options
+    output$custom_budget <- renderUI({
+        lapply(1:length(input$cat), function(i) {
+            numericInput(paste0(input$cat[i]), label = paste0(input$cat[i]), value = 200, step = 10)
+        })
+    })
+    
+    # observe budget options
+    observeEvent(input$budget, {
+        updateTabsetPanel(session,
+                          "budget_selector",
+                          selected = input$budget)
+    })
+    
+    # add budget
+    budget <- reactive({
+        if (input$budget == "Custom budget") {
+            budget <- data.frame(lapply(1:length(input$cat), function(i) {
+                input[[paste0(input$cat[i])]]
+                }))
+            names(budget) <- input$cat
             
+            # to long
+            budget <- melt(budget)
+            names(budget) <- c("Category", "Budget")
+            budget
+        }
+    })
+
     # bar chart data
     data_bar <- reactive({
-        aggregate(data()$Cost, by = list(data()$Category), 
-                  FUN = function(x) sum(x, na.rm = T)) %>% 
+        
+        # summary by category
+        data_bar <- aggregate(data()$Cost, by = list(data()$Category), 
+                              FUN = function(x) sum(x, na.rm = T)) %>% 
             as.data.frame() %>% 
             rename(Category = Group.1,
                    Cost     = x) %>% 
             filter(Category %in% input$cat)
+        
+        # summary by person and category
+        for(i in seq_len(length(names()))) {
+            data_person <- data()[which(data()[, names()[i]] == 1), ]
+            data_person  <- aggregate(data_person$Cost, 
+                                      by = list(data_person$Category),
+                                      FUN = function(x) sum(x, na.rm = T)) %>% 
+                as.data.frame()
+            
+            # rename
+            names(data_person) <- c("Category", names()[i])
+            
+            # merge with data_bar
+            data_bar <- merge(data_bar, data_person, all = TRUE) %>% 
+                filter(Category %in% input$cat)
+            data_bar[is.na(data_bar)] <- 0
+        }
+
+        # add budget
+        if (input$budget == "Custom budget") {
+            
+            # merge budget to data_bar
+            data_bar <- merge(data_bar, budget()) %>% 
+            
+            # add comparison with budget
+            mutate(Compare = ifelse(Cost > Budget,  "above budget",
+                             ifelse(Cost <= Budget, "within budget", NA))) %>% 
+                
+            # change to factor
+            mutate(Compare = factor(Compare, levels = c("above budget",
+                                                        "within budget")))
+        }
+
+        data_bar
     })
     
     # bar chart
     p_bar <- reactive({
-        p_bar <- ggplot(data = data_bar(),
-                        aes(x = reorder(Category, Cost), 
-                            y = Cost)) +
-            geom_col() +
-            theme_classic() +
+        # fill for budget
+        if(input$budget == "Custom budget") {
+            p_bar <- ggplot(data = data_bar(),
+                            aes(x = reorder(Category, Cost), 
+                                y = Cost,
+                                fill = Compare)) +
+                geom_col() +
+                theme_classic() + 
+                scale_fill_manual(values = c(
+                    "above budget"    = input$budget_red,
+                    "within budget"   = input$budget_green))
+        } else {
+            p_bar <- ggplot(data = data_bar(),
+                            aes(x = reorder(Category, Cost), 
+                                y = Cost)) +
+                geom_col() +
+                theme_classic()
+        } # END if else STATEMENT
+        
+        p_bar <- p_bar + 
             theme(plot.title   = element_text(size = 18, face = "bold"),
                   axis.title.x = element_text(size = 16, face = "bold"),
                   axis.title.y = element_text(size = 16, face = "bold"),
@@ -190,9 +291,7 @@ server <- function(input, output, session) {
             labs(title = paste0("Expense reports from ", dates()$start, " to ", dates()$end, ", total = $",
                                 sum(data_bar()$Cost)),
                  x     = "Category") +
-            coord_flip() +
-            geom_text(aes(label = Cost), hjust = -0.2)
-
+            geom_text(aes(label = Cost), vjust = -0.5, size = 5)
         
         p_bar
     })
