@@ -1,7 +1,8 @@
 # -------------- Set-up -------------- #
 
 # libraries
-library(readxl)         # import export
+library(readxl)         # import data
+library(openxlsx)       # export excel sheets
 library(reshape2)       # long wide
 library(kableExtra)     # table formatting
 library(data.table)     # setnames
@@ -14,6 +15,13 @@ library(tidyverse)      # general wrangling
 this_date  <- unlist(str_split(Sys.Date(), pattern = "-"))
 this_year  <- this_date[1]
 this_month <- this_date[2]
+
+# date for previous month
+prev_month <- ifelse(as.numeric(this_month) != 1, as.numeric(this_month) - 1, 12)
+prev_year  <- ifelse(as.numeric(this_month) != 1, this_year, as.numeric(this_year) - 1)
+prev_date  <- ifelse(prev_month %in% c(1, 3, 5, 7, 8, 10, 12), 31,
+              ifelse(prev_month %in% c(4, 6, 9, 11), 30,
+              ifelse(prev_year %% 4 != 0, 28, 29)))
 
 # -------------- Define UI -------------- #
 
@@ -33,7 +41,7 @@ ui <- fluidPage(
         # date selection
         selectInput("date", 
                     strong("Date range"),
-                    choices = c("Month to date", "Custom date"),
+                    choices = c("Month to date", "Year to date", "Custom date", "Custom month"),
                     selected = "Month to date"),
         tabsetPanel(
             id   = "date_selector",
@@ -43,12 +51,32 @@ ui <- fluidPage(
                 strong(paste0("Month to Date: From ", this_year, "-", this_month, "-01 ",
                        "to ", Sys.Date(), "\n"))), 
             tabPanelBody(
+                "Year to date",
+                strong(paste0("Year to date: From ", this_year, "-01-01 ",
+                       "to ", Sys.Date(), "\n"))), 
+            tabPanelBody(
                 "Custom date",
                 fluidRow(
                     column(6,
-                           dateInput("start", "Start Date:", value = "2021-08-01")),
+                           dateInput("start", "Start Date:", 
+                                     value = paste0(prev_year, "-", prev_month, "-01"))),
                     column(6,
-                           dateInput("end", "End Date:", value = "2021-08-31"))))
+                           dateInput("end", "End Date:", 
+                                     value = paste0(prev_year, "-", prev_month, "-", prev_date))))),
+            tabPanelBody(
+                "Custom month",
+                fluidRow(
+                    column(6,
+                           selectInput("month", "Month:", 
+                                       choices = c("January" = "01", "February" = "02", "March" = "03",
+                                                   "April" = "04", "May" = "05", "June" = "06", 
+                                                   "July" = "07", "August" = "08", "September" = "09",
+                                                   "October" = "10", "November" = "11", "December" = "12"),
+                                       selected = this_month)),
+                    column(6,
+                           selectInput("year", "Year:", 
+                                       choices = 2000:2100,
+                                       selected = as.numeric(prev_year)))))
         ),
         
         hr(),
@@ -123,10 +151,23 @@ server <- function(input, output, session) {
             start <- input$start
             end   <- input$end
             
-        } else {
+        } else if(input$date == "Month to date") {
             # month to date
             start <- as.Date(paste0(this_year, "-", this_month, "-01"))
             end   <- Sys.Date()
+        
+        } else if(input$date == "Year to date") {
+            # year to date
+            start <- as.Date(paste0(this_year, "-01-01"))
+            end   <- Sys.Date()
+            
+        } else if(input$date == "Custom month") {
+            #custom month
+            start    <- as.Date(paste0(input$year, "-", input$month, "-01"))
+            end_date <- ifelse(as.numeric(input$month) %in% c(1, 3, 5, 7, 8, 10, 12), 31,
+                               ifelse(as.numeric(input$month) %in% c(4, 6, 9, 11), 30,
+                                      ifelse(as.numeric(input$year) %% 4 != 0, 28, 29)))
+            end      <- as.Date(paste0(input$year, "-", input$month, "-", end_date))
         }
         return(list(end   = end,
                     start = start))
@@ -209,7 +250,7 @@ server <- function(input, output, session) {
             names(budget) <- input$cat
             
             # to long
-            budget <- melt(budget)
+            budget <- reshape2::melt(budget)
             names(budget) <- c("Category", "Budget")
             budget
         }
@@ -223,8 +264,7 @@ server <- function(input, output, session) {
                               FUN = function(x) sum(x, na.rm = T)) %>% 
             as.data.frame() %>% 
             rename(Category = Group.1,
-                   Cost     = x) %>% 
-            filter(Category %in% input$cat)
+                   Cost     = x)
         
         # summary by person and category
         for(i in seq_len(length(names()))) {
@@ -238,8 +278,7 @@ server <- function(input, output, session) {
             names(data_person) <- c("Category", names()[i])
             
             # merge with data_bar
-            data_bar <- merge(data_bar, data_person, all = TRUE) %>% 
-                filter(Category %in% input$cat)
+            data_bar <- merge(data_bar, data_person, all = TRUE)
             data_bar[is.na(data_bar)] <- 0
         }
 
@@ -261,11 +300,15 @@ server <- function(input, output, session) {
         data_bar
     })
     
+
     # bar chart
     p_bar <- reactive({
+        
         # fill for budget
         if(input$budget == "Custom budget") {
-            p_bar <- ggplot(data = data_bar(),
+            p_bar <- ggplot(data = data_bar() %>% 
+                                # selected categories
+                                filter(Category %in% input$cat),
                             aes(x = reorder(Category, Cost), 
                                 y = Cost,
                                 fill = Compare)) +
@@ -275,7 +318,9 @@ server <- function(input, output, session) {
                     "above budget"    = input$budget_red,
                     "within budget"   = input$budget_green))
         } else {
-            p_bar <- ggplot(data = data_bar(),
+            p_bar <- ggplot(data = data_bar() %>% 
+                                # selected categories
+                                filter(Category %in% input$cat),
                             aes(x = reorder(Category, Cost), 
                                 y = Cost)) +
                 geom_col() +
@@ -299,8 +344,22 @@ server <- function(input, output, session) {
     # outputs
     output$plot    <- renderPlot(p_bar())
     output$summary <- renderDataTable(data_bar())
-    output$data    <- renderDataTable(data())
-
+    output$data    <- renderDataTable(data() %>% 
+                                          # selected categories
+                                          filter(Category %in% input$cat))
+    output$downloadData <- downloadHandler(
+        filename = "splitwiseR.xlsx",
+        content  = function(file) {
+            wb <- createWorkbook()
+            ws <- addWorksheet(wb, "Graph")
+            plot(p_bar())
+            insertPlot(wb, sheet = ws, width = 12, height = 7)
+            addWorksheet(wb, "Grouped data")
+            writeData(wb, "Grouped data", data_bar())
+            addWorksheet(wb, "Itemized data")
+            writeData(wb, "Itemized data", data())
+            saveWorkbook(wb, file = file, overwrite = TRUE)
+    })
 }
 
 # Run the application 
