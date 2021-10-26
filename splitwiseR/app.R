@@ -137,6 +137,7 @@ ui <- fluidPage(
 server <- function(input, output, session) {
     
     # observe custom_date option
+    # and specify date range for test_data
     observeEvent(input$date, {
         updateTabsetPanel(session,
                           "date_selector",
@@ -168,6 +169,11 @@ server <- function(input, output, session) {
                                ifelse(as.numeric(input$month) %in% c(4, 6, 9, 11), 30,
                                       ifelse(as.numeric(input$year) %% 4 != 0, 28, 29)))
             end      <- as.Date(paste0(input$year, "-", input$month, "-", end_date))
+        }
+        # specific date range for test_data
+        if(is.null(input$upload)){
+            start <- "2021-08-01"
+            end   <- "2021-09-01"
         }
         return(list(end   = end,
                     start = start))
@@ -202,9 +208,16 @@ server <- function(input, output, session) {
         
         # 0/1 dummy code for each person
         # 1 = spender
-        data  <- data %>% 
-            mutate(across(all_of(names),
-                          ~as.numeric(. > 0)))
+        # if only one person -> all = 1
+        if (length(names) == 1) {
+            data <- data %>% 
+                mutate(across(all_of(names),
+                              ~as.numeric(. == 0)))
+        } else {
+            data  <- data %>% 
+                mutate(across(all_of(names),
+                              ~as.numeric(. > 0)))
+        }
         
         # pull out categories
         cat   <- sort(as.character(unique(data$Category)))
@@ -343,12 +356,16 @@ server <- function(input, output, session) {
     
     # outputs
     output$plot    <- renderPlot(p_bar())
-    output$summary <- renderDataTable(data_bar())
+    output$summary <- renderDataTable(data_bar() %>% 
+                                          # selected categories
+                                          filter(Category %in% input$cat))
     output$data    <- renderDataTable(data() %>% 
                                           # selected categories
                                           filter(Category %in% input$cat))
     output$downloadData <- downloadHandler(
-        filename = "splitwiseR.xlsx",
+        filename = function() {
+            paste0("splitwiseR-", Sys.Date(),".xlsx")
+        },
         content  = function(file) {
             wb <- createWorkbook()
             ws <- addWorksheet(wb, "Graph")

@@ -5,9 +5,9 @@ account: nguyenllpsych
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 4566889
-bundleId: 4994180
+bundleId: 5176861
 url: https://nguyenllpsych.shinyapps.io/splitwiseR/
-when: 1630610501.32951
-lastSyncTime: 1630610501.32951
+when: 1635212023.66677
+lastSyncTime: 1635212023.66677
 asMultiple: FALSE
 asStatic: FALSE
