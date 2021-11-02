@@ -90,6 +90,13 @@ ui <- fluidPage(
                     selected = c("Groceries", "Household supplies", "Home")
         ),
         
+        # more category selection
+        selectInput("cat2", 
+                    "More general category?",
+                    choices  = c("No", "Yes"),
+                    selected = c("No")
+        ),
+        
         # budget setting
         selectInput("budget",
                     strong("Set a budget?"),
@@ -123,6 +130,7 @@ ui <- fluidPage(
                              hover = "plot_hover"),
                     tabPanel("Data",
                              downloadButton("downloadData", "Download data"),
+                             dataTableOutput("group"),
                              dataTableOutput("summary"),
                              dataTableOutput("data")),
                     tabPanel("Description"
@@ -239,7 +247,25 @@ server <- function(input, output, session) {
                           choices = cat(),
                           selected = cat())
     })
-
+    
+    # additional category options
+    cat2 <- reactive({
+        if (input$cat2 == "Yes") {
+            cat2 <- list(Entertainment = c("Games", "Movies", "Music", "Entertainment - Other", "Sports"),
+                         Food = c("Dining out", "Groceries", "Liquor", "Food and drink - Other"),
+                         Home = c("Electronics", "Furniture", "Household supplies", "Maintenance", "Home - Other", "Services"),
+                         Pets = c("Pets"),
+                         Expenses = c("Clothing", "Gifts", "Education", "Life - Other"),
+                         Health = c("Insurance", "Medical expenses"),
+                         Transportation = c("Bicycle", "Bus/train", "Car", "Gas/fuel", "Hotel", 
+                                            "Transportation - Other", "Parking", "Plane", "Taxi"),
+                         Utilities = c("Rent", "Cleaning", "Electricity", "Heat/gas", "Utilities - Other", 
+                                       "Trash", "TV/Phone/Internet", "Water", "Mortgage")
+            )
+        }
+        cat2
+    })
+    
     # render budget options
     output$custom_budget <- renderUI({
         lapply(1:length(input$cat), function(i) {
@@ -268,7 +294,9 @@ server <- function(input, output, session) {
             budget
         }
     })
-
+    
+    ###### DATA ###### 
+    
     # bar chart data
     data_bar <- reactive({
         
@@ -313,8 +341,66 @@ server <- function(input, output, session) {
         data_bar
     })
     
+    # grouped chart data 
+    data_group <- reactive({
+        if(input$cat2 == "Yes"){    
+            
+            # add a larger category in original data frame
+            data_group <- data() %>% 
+                mutate(Group = ifelse(
+                    Category %in% cat2()$Entertainment, "Entertainment",
+                    ifelse(
+                        Category %in% cat2()$Food, "Food",
+                        ifelse(
+                            Category %in% cat2()$Home, "Home",
+                            ifelse(
+                                Category %in% cat2()$Pets, "Pets",
+                                ifelse(
+                                    Category %in% cat2()$Expenses, "Expenese",
+                                    ifelse(
+                                        Category %in% cat2()$Health, "Health",
+                                        ifelse(
+                                            Category %in% cat2()$Transportation, "Transportation",
+                                            ifelse(
+                                                Category %in% cat2()$Utilities, "Utililites", NA
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                ))
+            
+            # aggregate by group
+            data_group <- aggregate(data_group$Cost, by = list(data_group$Group), 
+                                    FUN = function(x) sum(x, na.rm = T)) %>% 
+                as.data.frame() %>% 
+                rename(Group = Group.1,
+                       Cost     = x)
+            
+            # add budget
+            if (input$budget == "Custom budget") {
+                
+                # merge budget to data_bar
+                data_group <- merge(data_group, budget()) %>% 
+                    
+                    # add comparison with budget
+                    mutate(Compare = ifelse(Cost > Budget,  "above budget",
+                                            ifelse(Cost <= Budget, "within budget", NA))) %>% 
+                    # change to factor
+                    mutate(Compare = factor(Compare, levels = c("above budget",
+                                                                "within budget")))
+            }
 
-    # bar chart
+        data_group
+        }
+        
+    }) # END data_group REACTIVE
+     
+    ###### VISUALIZATION ###### 
+    
+    # bar chart for category
     p_bar <- reactive({
         
         # fill for budget
@@ -354,8 +440,39 @@ server <- function(input, output, session) {
         p_bar
     })
     
+    # bar chart for larger group
+    p_group <- reactive({
+        
+        p_group <- ggplot(data = data_group(),
+                        aes(x = reorder(Group, Cost), 
+                            y = Cost)) +
+            geom_col() +
+            theme_classic() +
+            theme(plot.title   = element_text(size = 18, face = "bold"),
+                  axis.title.x = element_text(size = 16, face = "bold"),
+                  axis.title.y = element_text(size = 16, face = "bold"),
+                  axis.text.x  = element_text(size = 14),
+                  axis.text.y  = element_text(size = 14)) +
+            labs(title = paste0("Expense reports from ", dates()$start, " to ", dates()$end, ", total = $",
+                                sum(data_group()$Cost)),
+                 x     = "Category") +
+            geom_text(aes(label = Cost), vjust = -0.5, size = 5)
+        
+        p_group
+    })
+    
     # outputs
-    output$plot    <- renderPlot(p_bar())
+    p <- reactive({
+        if(input$cat2 == "Yes") {
+            p <- p_group()
+        } else {
+            p <- p_bar()
+        }
+        p
+    })
+    
+    output$plot <- renderPlot(p())
+    output$group   <- renderDataTable(data_group())
     output$summary <- renderDataTable(data_bar() %>% 
                                           # selected categories
                                           filter(Category %in% input$cat))
@@ -369,12 +486,14 @@ server <- function(input, output, session) {
         content  = function(file) {
             wb <- createWorkbook()
             ws <- addWorksheet(wb, "Graph")
-            plot(p_bar())
+            plot(p())
             insertPlot(wb, sheet = ws, width = 12, height = 7)
             addWorksheet(wb, "Grouped data")
-            writeData(wb, "Grouped data", data_bar())
+            writeData(wb, "Grouped data", data_group())
             addWorksheet(wb, "Itemized data")
             writeData(wb, "Itemized data", data())
+            addWorksheet(wb, "Splitwise data")
+            writeData(wb, "Splitwise data", data_bar())
             saveWorkbook(wb, file = file, overwrite = TRUE)
     })
 }
