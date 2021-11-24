@@ -24,7 +24,7 @@ prev_date  <- ifelse(prev_month %in% c(1, 3, 5, 7, 8, 10, 12), 31,
               ifelse(prev_year %% 4 != 0, 28, 29)))
 
 # custom budget
-group_list  <- c("Entertainment", "Food", "Home", "Pets", "Expenses", "Health", "Transportation", "Utilities")
+group_list  <- c("Entertainment", "Food", "Home", "Pets", "Expenses", "Utilities")
 budget_list <- c(50, 500, 50, 100, 100, 50, 50, 1200)
 
 
@@ -295,10 +295,10 @@ server <- function(input, output, session) {
                          Food = c("Dining out", "Groceries", "Liquor", "Food and drink - Other"),
                          Home = c("Electronics", "Furniture", "Household supplies", "Maintenance", "Home - Other", "Services"),
                          Pets = c("Pets"),
-                         Expenses = c("Clothing", "Gifts", "Education", "Life - Other"),
-                         Health = c("Insurance", "Medical expenses"),
-                         Transportation = c("Bicycle", "Bus/train", "Car", "Gas/fuel", "Hotel", 
-                                            "Transportation - Other", "Parking", "Plane", "Taxi"),
+                         Expenses = c("Clothing", "Gifts", "Education", "Life - Other",
+                                      "Insurance", "Medical expenses", "Bicycle", "Bus/train",
+                                      "Car", "Gas/fuel", "Hotel", "Transportation - Other",
+                                      "Parking", "Plane", "Taxi"),
                          Utilities = c("Rent", "Cleaning", "Electricity", "Heat/gas", "Utilities - Other", 
                                        "Trash", "TV/Phone/Internet", "Water", "Mortgage")
             )
@@ -370,13 +370,7 @@ server <- function(input, output, session) {
                                 ifelse(
                                     Category %in% cat2()$Expenses, "Expenses",
                                     ifelse(
-                                        Category %in% cat2()$Health, "Health",
-                                        ifelse(
-                                            Category %in% cat2()$Transportation, "Transportation",
-                                            ifelse(
-                                                Category %in% cat2()$Utilities, "Utilities", NA
-                                            )
-                                        )
+                                        Category %in% cat2()$Utilities, "Utilities", NA
                                     )
                                 )
                             )
