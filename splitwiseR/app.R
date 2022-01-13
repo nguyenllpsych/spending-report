@@ -25,7 +25,7 @@ prev_date  <- ifelse(prev_month %in% c(1, 3, 5, 7, 8, 10, 12), 31,
 
 # custom budget
 group_list  <- c("Entertainment", "Food", "Home", "Pets", "Expenses", "Utilities")
-budget_list <- c(50, 500, 50, 100, 100, 50, 50, 1200)
+budget_list <- c(50, 400, 100, 100, 200, 1100)
 
 
 # -------------- Define UI -------------- #
